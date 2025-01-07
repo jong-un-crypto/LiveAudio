@@ -473,7 +473,7 @@ const useWebSocket = (
 
           socket.onerror = (error) => {
             console.error("WebSocket error:", error);
-            setConnectionStatus("error");
+            setConnectionStatus("closed");
           };
 
           socket.onclose = () => {
@@ -511,6 +511,11 @@ const useWebSocket = (
     ws,
     connectionStatus,
     isCallEnded,
+    endCall: () => {
+      setConnectionStatus("disconnected");
+      setIsCallEnded(true);
+      if (ws) ws.close();
+    },
     sendMessage,
   };
 };
@@ -598,16 +603,18 @@ export default function Home() {
     : { connectionStatus: 'disconnected', isCallEnded: false, endCall: () => {}, peerConnection: null, dataChannel: null };
   
   // 对 WebSocket 的配置
-  const wsUrl = "wss://audio.enty.services/stream";
+  //const wsUrl = "wss://audio.enty.services/stream";
+  const wsUrl = "wss://gtp.aleopool.cc/stream";
   const {
     ws,
     connectionStatus: wsStatus,
     isCallEnded: wsCallEnded,
+    endCall: wsEndCall,
     sendMessage,
   } = !isUseWebRTC
     // eslint-disable-next-line react-hooks/rules-of-hooks
     ? useWebSocket(wsUrl, checkAndBufferAudio, isSimultaneous, targetLang)
-    : { ws: null, connectionStatus: 'disconnected', isCallEnded: false, sendMessage: () => {} };  
+    : { ws: null, connectionStatus: 'disconnected', isCallEnded: false, endCall: () => {}, sendMessage: () => {} };  
 
   useEffect(() => {
     // 发送初始化数据
