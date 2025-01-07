@@ -373,8 +373,8 @@ const useWebRTC = (
 
 
 const useWebSocket = (
-  url: string, 
-  checkAndBufferAudio: Function, 
+  url: string,
+  checkAndBufferAudio: Function,
   isSimultaneous: boolean,
   targetLang: string
 ) => {
@@ -383,127 +383,117 @@ const useWebSocket = (
   const [isCallEnded, setIsCallEnded] = useState(false);
 
   useEffect(() => {
+    // 加载 RecordRTC 脚本
     const script = document.createElement("script");
     script.src = "https://www.WebRTC-Experiment.com/RecordRTC.js";
     script.onload = () => {
       const RecordRTC = (window as any).RecordRTC;
       const StereoAudioRecorder = (window as any).StereoAudioRecorder;
 
-      if (navigator) {
-        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-          console.log("RecordRTC start.");
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          console.log("Audio stream obtained. Initializing WebSocket...");
 
           const socket = new WebSocket(url);
-          setWs(socket); // 保存 WebSocket 到状态
+          setWs(socket);
 
           socket.onopen = () => {
             console.log("WebSocket connected");
             setConnectionStatus("connected");
 
             const audioConfig = {
-              type: 'config',
+              type: "config",
               data: {
                 is_simultaneous: isSimultaneous,
                 target_lang: targetLang,
-              }
+              },
             };
-            //socket.send(JSON.stringify(audioConfig));
-            // 在 WebSocket 连接打开后开始录音
+            socket.send(JSON.stringify(audioConfig));
+
+            // 初始化录音
             const recorderInstance = new RecordRTC(stream, {
-              type: 'audio',
+              type: "audio",
               recorderType: StereoAudioRecorder,
-              mimeType: 'audio/wav',
+              mimeType: "audio/wav",
               timeSlice: 100,
               desiredSampRate: 16000,
               numberOfAudioChannels: 1,
               ondataavailable: (blob: Blob) => {
-                if (blob.size > 0) {
+                if (blob.size > 0 && socket.readyState === WebSocket.OPEN) {
                   const reader = new FileReader();
                   reader.onloadend = () => {
-                    if (reader.result) {
-                      const base64data = arrayBufferToBase64(reader.result as ArrayBuffer);
-
-                      const message = {
-                        type: "start",
-                        request: {
-                          audio: base64data,  // Audio data as a binary array or ArrayBuffer
-                          latency: "normal",   // Latency type
-                          format: "opus",      // Audio format (opus, mp3, or wav)
-                          prosody: {           // Optional prosody settings
-                            speed: 1.0,        // Speech speed
-                            volume: 0          // Volume adjustment in dB
-                          },
-                          vc_uid: "c9cf4e49"   // A unique reference ID
-                        }
-                      };
-                      if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(JSON.stringify(message)); // 发送消息
-                      } else {
-                        console.error("WebSocket is not open, cannot send data.");
-                      }
-                    } else {
-                      console.error("FileReader result is null");
-                    }
+                    const base64data = arrayBufferToBase64(
+                      reader.result as ArrayBuffer
+                    );
+                    const message = {
+                      type: "start",
+                      request: {
+                        audio: base64data,
+                        latency: "normal",
+                        format: "opus",
+                        prosody: {
+                          speed: 1.0,
+                          volume: 0,
+                        },
+                        vc_uid: "c9cf4e49",
+                      },
+                    };
+                    socket.send(JSON.stringify(message));
                   };
                   reader.readAsArrayBuffer(blob);
+                } else {
+                  console.warn("WebSocket not open, audio data not sent.");
                 }
-              }
+              },
             });
 
             recorderInstance.startRecording();
           };
+
           socket.onmessage = (event) => {
             console.log("Received message:", event.data);
-            try {
-              if (event.data instanceof Blob) {
-                // 如果是 Blob 类型，使用 FileReader 将其转换为 ArrayBuffer
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  checkAndBufferAudio(reader.result as ArrayBuffer);
-                };
-                reader.readAsArrayBuffer(event.data);
-                return; // 需要提前退出，等 FileReader 读取完成后再继续处理
-              } else {
-                throw new Error("Unsupported data type received");
-              }
-            } catch (error) {
-              console.error("Error processing WebSocket message:", error);
+            if (event.data instanceof Blob) {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                checkAndBufferAudio(reader.result as ArrayBuffer);
+              };
+              reader.readAsArrayBuffer(event.data);
+            } else {
+              console.error("Unsupported message type:", typeof event.data);
             }
           };
 
-          socket.onerror = (error) => {
-            console.error("WebSocket error:", error);
-            setConnectionStatus("closed");
+          socket.onerror = (event) => {
+            console.error("WebSocket error:", event);
+            setConnectionStatus("error");
           };
 
           socket.onclose = () => {
             console.log("WebSocket disconnected");
             setConnectionStatus("disconnected");
           };
-
-        }).catch((err) => {
-          console.error("getUserMedia failed:", err);
+        })
+        .catch((error) => {
+          console.error("Failed to get audio stream:", error);
         });
-      }
     };
 
-    document.body.appendChild(script); // 在页面加载script
+    document.body.appendChild(script);
 
     return () => {
-      // 清理 WebSocket 连接
       if (ws) {
         ws.close();
       }
-      //TODO: 停止录音
+      console.log("WebSocket connection closed.");
     };
   }, [url, isSimultaneous, targetLang, checkAndBufferAudio, ws]);
 
-  // 发送消息的函数
   const sendMessage = (message: object) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     } else {
-      console.error("WebSocket is not open, cannot send message");
+      console.error("WebSocket is not open, cannot send message.");
     }
   };
 
@@ -512,13 +502,14 @@ const useWebSocket = (
     connectionStatus,
     isCallEnded,
     endCall: () => {
+      if (ws) ws.close();
       setConnectionStatus("disconnected");
       setIsCallEnded(true);
-      if (ws) ws.close();
     },
     sendMessage,
   };
 };
+
 
 // 转换ArrayBuffer为Base64字符串
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
@@ -603,8 +594,7 @@ export default function Home() {
     : { connectionStatus: 'disconnected', isCallEnded: false, endCall: () => {}, peerConnection: null, dataChannel: null };
   
   // 对 WebSocket 的配置
-  //const wsUrl = "wss://audio.enty.services/stream";
-  const wsUrl = "wss://gtp.aleopool.cc/stream";
+  const wsUrl = "wss://audio.enty.services/stream";
   const {
     ws,
     connectionStatus: wsStatus,
