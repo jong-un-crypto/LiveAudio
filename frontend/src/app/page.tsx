@@ -379,9 +379,8 @@ const useWebSocket = (
   targetLang: string
 ) => {
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState("disconnected");
-  const [audioQueue, setAudioQueue] = useState<Blob[]>([]); // 存储音频队列
-  const [isInCall, setIsInCall] = useState(false); // 是否在通话中
+  const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [isCallEnded, setIsCallEnded] = useState(false);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -482,7 +481,6 @@ const useWebSocket = (
             });
 
             recorderInstance.startRecording();
-            setIsInCall(true); // 设定为在通话状态
           };
 
         }).catch((err) => {
@@ -500,7 +498,7 @@ const useWebSocket = (
       }
       //TODO: 停止录音
     };
-  }, [url, isSimultaneous, targetLang]);
+  }, [url, isSimultaneous, targetLang, checkAndBufferAudio, ws]);
 
   // 发送消息的函数
   const sendMessage = (message: object) => {
@@ -514,9 +512,8 @@ const useWebSocket = (
   return {
     ws,
     connectionStatus,
+    isCallEnded,
     sendMessage,
-    isInCall,
-    audioQueue
   };
 };
 
@@ -536,7 +533,7 @@ export default function Home() {
   const [audioQueue, setAudioQueue] = useState<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(true);
   const [audioList, setAudioList] = useState<string[]>([]);
-  const [isUseWebRTC, setIsUseWebRTC] = useState(true); // 默认使用 WebRTC
+  const [isUseWebRTC, setIsUseWebRTC] = useState(false); // 默认使用 WebRTC
   const [isSimultaneous, setIsSimultaneous] = useState(false);
   const [targetLang, setTargetLang] = useState('英语');
   const handleLanguageChange = (newIsSimultaneous: boolean, newTargetLang: string) => {
@@ -600,6 +597,7 @@ export default function Home() {
     peerConnection,
     dataChannel,
   } = isUseWebRTC
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     ? useWebRTC(audioQueue, setAudioQueue, setIsRecording, checkAndBufferAudio, isSimultaneous, targetLang)
     : { connectionStatus: 'disconnected', isCallEnded: false, endCall: () => {}, peerConnection: null, dataChannel: null };
   
@@ -608,10 +606,12 @@ export default function Home() {
   const {
     ws,
     connectionStatus: wsStatus,
+    isCallEnded: wsCallEnded,
     sendMessage,
   } = !isUseWebRTC
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     ? useWebSocket(wsUrl, checkAndBufferAudio, isSimultaneous, targetLang)
-    : { ws: null, connectionStatus: 'disconnected', sendMessage: () => {} };  
+    : { ws: null, connectionStatus: 'disconnected', isCallEnded: false, sendMessage: () => {} };  
 
   useEffect(() => {
     // 发送初始化数据
@@ -624,7 +624,7 @@ export default function Home() {
         },
       });
     }
-  }, [wsStatus, isSimultaneous, targetLang]);
+  }, [wsStatus, isSimultaneous, targetLang, isUseWebRTC, sendMessage]);
 
   useEffect(() => {
     if (!isPlayingAudio && audioQueue.length > 0) {
