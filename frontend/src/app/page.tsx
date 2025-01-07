@@ -408,36 +408,6 @@ const useWebSocket = (
               }
             };
             //socket.send(JSON.stringify(audioConfig));
-
-            socket.onmessage = (event) => {
-              console.log("Received message:", event.data);
-              try {
-                if (event.data instanceof Blob) {
-                  // 如果是 Blob 类型，使用 FileReader 将其转换为 ArrayBuffer
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    checkAndBufferAudio(reader.result as ArrayBuffer);
-                  };
-                  reader.readAsArrayBuffer(event.data);
-                  return; // 需要提前退出，等 FileReader 读取完成后再继续处理
-                } else {
-                  throw new Error("Unsupported data type received");
-                }
-              } catch (error) {
-                console.error("Error processing WebSocket message:", error);
-              }
-            };
-
-            socket.onerror = (error) => {
-              console.error("WebSocket error:", error);
-              setConnectionStatus("error");
-            };
-
-            socket.onclose = () => {
-              console.log("WebSocket disconnected");
-              setConnectionStatus("disconnected");
-            };
-
             // 在 WebSocket 连接打开后开始录音
             const recorderInstance = new RecordRTC(stream, {
               type: 'audio',
@@ -481,6 +451,34 @@ const useWebSocket = (
             });
 
             recorderInstance.startRecording();
+          };
+          socket.onmessage = (event) => {
+            console.log("Received message:", event.data);
+            try {
+              if (event.data instanceof Blob) {
+                // 如果是 Blob 类型，使用 FileReader 将其转换为 ArrayBuffer
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  checkAndBufferAudio(reader.result as ArrayBuffer);
+                };
+                reader.readAsArrayBuffer(event.data);
+                return; // 需要提前退出，等 FileReader 读取完成后再继续处理
+              } else {
+                throw new Error("Unsupported data type received");
+              }
+            } catch (error) {
+              console.error("Error processing WebSocket message:", error);
+            }
+          };
+
+          socket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            setConnectionStatus("error");
+          };
+
+          socket.onclose = () => {
+            console.log("WebSocket disconnected");
+            setConnectionStatus("disconnected");
           };
 
         }).catch((err) => {
@@ -582,8 +580,6 @@ export default function Home() {
     },
   });
 
-
-  
   const { isPlayingAudio, playAudio, checkAndBufferAudio, stopCurrentAudio } = useAudioManager(
     audioQueue,
     setAudioQueue,
