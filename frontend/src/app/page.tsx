@@ -408,7 +408,7 @@ const useWebSocket = (
                 target_lang: targetLang,
               }
             };
-            socket.send(JSON.stringify(audioConfig));
+            //socket.send(JSON.stringify(audioConfig));
 
             socket.onmessage = (event) => {
               console.log("Received message:", event.data);
@@ -536,7 +536,7 @@ export default function Home() {
   const [audioQueue, setAudioQueue] = useState<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(true);
   const [audioList, setAudioList] = useState<string[]>([]);
-
+  const [isUseWebRTC, setIsUseWebRTC] = useState(true); // 默认使用 WebRTC
   const [isSimultaneous, setIsSimultaneous] = useState(false);
   const [targetLang, setTargetLang] = useState('英语');
   const handleLanguageChange = (newIsSimultaneous: boolean, newTargetLang: string) => {
@@ -545,7 +545,7 @@ export default function Home() {
     console.log('Updated Language Config:', newIsSimultaneous, newTargetLang);
 
   // 在语言变化后触发发送配置数据
-  if (dataChannel && dataChannel.readyState === 'open') {
+  if (isUseWebRTC && dataChannel && dataChannel.readyState === 'open') {
     const audioConfig = {
       type: 'config',
       data: {
@@ -560,13 +560,15 @@ export default function Home() {
   }
 
   // 通过 WebSocket 发送语言更新
-  sendMessage({
-    type: "config",
-    data: {
-      isSimultaneous: newIsSimultaneous,
-      targetLang: newTargetLang,
-    },
-  });
+  if (!isUseWebRTC && ws && ws.readyState === WebSocket.OPEN) {
+    sendMessage({
+      type: "config",
+      data: {
+        isSimultaneous: newIsSimultaneous,
+        targetLang: newTargetLang,
+      },
+    });
+  }
 
   };
 
@@ -584,32 +586,36 @@ export default function Home() {
   });
 
 
+  
   const { isPlayingAudio, playAudio, checkAndBufferAudio, stopCurrentAudio } = useAudioManager(
     audioQueue,
     setAudioQueue,
     setIsRecording
   );
 
-  const { connectionStatus, isCallEnded, endCall, peerConnection, dataChannel } = useWebRTC(
-    audioQueue,
-    setAudioQueue,
-    setIsRecording,
-    checkAndBufferAudio,
-    isSimultaneous,
-    targetLang
-  );
-  //const wsUrl = "wss://gtp.aleopool.cc/stream";
+  const {
+    connectionStatus,
+    isCallEnded,
+    endCall,
+    peerConnection,
+    dataChannel,
+  } = isUseWebRTC
+    ? useWebRTC(audioQueue, setAudioQueue, setIsRecording, checkAndBufferAudio, isSimultaneous, targetLang)
+    : { connectionStatus: 'disconnected', isCallEnded: false, endCall: () => {}, peerConnection: null, dataChannel: null };
+  
+  // 对 WebSocket 的配置
   const wsUrl = "wss://audio.enty.services/stream";
-  const { ws, connectionStatus: wsStatus, sendMessage } = useWebSocket(
-    wsUrl,
-    checkAndBufferAudio,
-    isSimultaneous,
-    targetLang
-  );
+  const {
+    ws,
+    connectionStatus: wsStatus,
+    sendMessage,
+  } = !isUseWebRTC
+    ? useWebSocket(wsUrl, checkAndBufferAudio, isSimultaneous, targetLang)
+    : { ws: null, connectionStatus: 'disconnected', sendMessage: () => {} };  
 
   useEffect(() => {
     // 发送初始化数据
-    if (wsStatus === "connected") {
+    if (!isUseWebRTC && wsStatus === "connected") {
       sendMessage({
         type: "config",
         data: {
@@ -742,6 +748,12 @@ export default function Home() {
           })}
         </ol>
       </div>
+    </div>
+
+    <div>
+      <button onClick={() => setIsUseWebRTC(prev => !prev)}>
+        {isUseWebRTC ? 'Switch to WebSocket' : 'Switch to WebRTC'}
+      </button>
     </div>
 
       <div className={styles.controls}>
